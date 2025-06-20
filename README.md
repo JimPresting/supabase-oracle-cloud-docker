@@ -478,6 +478,116 @@ Once installed, your Supabase API will be available at:
 
 Use your `ANON_KEY` and `SERVICE_ROLE_KEY` from the `.env` file for API authentication.
 
+---
+
+## 🔗 Integrating with n8n (Self-Hosted)
+
+If you're running a self-hosted n8n instance and want to connect it to your self-hosted Supabase, you'll need additional configuration due to authentication header conflicts between n8n and Kong (Supabase's API gateway).
+
+### Prerequisites for n8n Integration
+
+1. **Additional Firewall Ports**: Add these to your Oracle Cloud Security Rules:
+   - **Port 8000** (Supabase Kong API Gateway): Source `0.0.0.0/0`
+   - **Port 5432** (PostgreSQL - optional for direct DB access): Source `0.0.0.0/0`
+
+### Fix Kong Authorization Header Conflict
+
+The n8n Supabase node sends both `apikey` and `Authorization` headers simultaneously. Kong prioritizes the `Authorization` header and ignores the `apikey` header, causing "Unauthorized" errors.
+
+**Solution**: Configure Kong to remove the `Authorization` header before processing the request.
+
+1. **Edit Kong configuration**:
+```bash
+nano ~/supabase/docker/volumes/api/kong.yml
+```
+
+2. **Find the `rest-v1` service** (around line 93) and add the `request-transformer` plugin:
+
+```yaml
+  ## Secure REST routes
+  - name: rest-v1
+    _comment: 'PostgREST: /rest/v1/* -> http://rest:3000/*'
+    url: http://rest:3000/
+    routes:
+      - name: rest-v1-all
+        strip_path: true
+        paths:
+          - /rest/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: true
+      - name: request-transformer    # ADD THIS PLUGIN
+        config:
+          remove:
+            headers:
+              - Authorization        # REMOVE Authorization HEADER
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+```
+
+3. **Ensure the `request-transformer` plugin is enabled** in `docker-compose.yml`:
+```yaml
+KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
+```
+
+4. **Restart Kong**:
+```bash
+sudo docker-compose restart kong
+```
+
+### Configure n8n Supabase Credentials
+
+1. In n8n, create new Supabase credentials with:
+   - **Host**: `sb.example.com` (without https:// prefix or /rest/v1/ suffix)
+   - **Service Role Secret**: Your `SERVICE_ROLE_KEY` from the `.env` file
+
+2. Test the connection - it should now show "Connection tested successfully".
+
+### Understanding the Fix
+
+- **n8n Behavior**: The n8n Supabase node automatically sends both authentication headers
+- **Kong Priority**: Kong processes the `Authorization` header first and ignores the `apikey`
+- **Header Removal**: The `request-transformer` plugin removes the problematic `Authorization` header
+- **Result**: Kong only sees the `apikey` header and authentication succeeds
+
+### API Keys and Security
+
+Your self-hosted Supabase instance provides two types of API keys:
+
+- **Client API Key (anon)**: For frontend applications with limited permissions controlled by Row Level Security (RLS)
+- **Service Role Key**: For backend services like n8n with full administrative access
+
+Both keys are private to your installation and not publicly accessible. They are generated based on your `JWT_SECRET` in the `.env` file.
+
+### Row Level Security (RLS)
+
+By default, Supabase tables created through the Table Editor have RLS enabled. This means:
+- The `anon` key can only access data according to your RLS policies
+- The `service_role` key bypasses RLS and has full access (used by n8n)
+
+To create policies for controlled access with the `anon` key, use the SQL Editor in Supabase Studio.
+
+### Alternative: Direct PostgreSQL Connection
+
+If you prefer direct database access instead of using the Supabase API, you can connect n8n directly to PostgreSQL:
+
+- **Host**: `sb.example.com`
+- **Port**: `5432`
+- **Database**: `postgres`
+- **User**: `postgres`
+- **Password**: Your `POSTGRES_PASSWORD` from the `.env` file
+- **SSL**: Enable if connecting from external networks
+
+This bypasses all Supabase API features but provides direct database access for simple CRUD operations.
+
+---
+
 ## 🎉 Success!
 
 You now have a fully automated, self-hosted Supabase instance that:
@@ -489,6 +599,7 @@ You now have a fully automated, self-hosted Supabase instance that:
 - ✅ **Manages disk space** automatically
 - ✅ **Uses SSL encryption** with automatic renewal
 - ✅ **Accessible via custom domain**
+- ✅ **Integrates with n8n** for workflow automation
 
 ---
 
