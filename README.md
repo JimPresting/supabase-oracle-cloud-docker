@@ -148,7 +148,8 @@ Find the `studio:` section (around line 12) and add ports:
         ]
 ```
 
-**⚠️ Important**: Add the `ports:` section exactly between `restart: unless-stopped` and `healthcheck:`.
+**⚠️ Important: Add the ports: section exactly between restart: unless-stopped and healthcheck:.**
+Why this port mapping is required: By default, Docker containers only expose ports internally within the Docker network. Supabase Studio runs on port 3000 inside the container, but without the "3000:3000" mapping, this port is only accessible to other containers. Nginx needs to access Studio on localhost:3000 to proxy web requests. Without this mapping, Nginx cannot reach the Studio interface, resulting in a non-functional web dashboard.
 
 ### 4.4 Start Supabase
 ```bash
@@ -600,6 +601,24 @@ You now have a fully automated, self-hosted Supabase instance that:
 - ✅ **Uses SSL encryption** with automatic renewal
 - ✅ **Accessible via custom domain**
 - ✅ **Integrates with n8n** for workflow automation
+
+🔌 Connection Methods Summary
+Your self-hosted Supabase supports two integration approaches:
+Method 1: Supabase API (Recommended)
+
+Requirements: Host (sb.example.com) + SERVICE_ROLE_KEY
+Security: Very secure - keys are private, not publicly accessible
+Access: Only you (keys generated from your JWT_SECRET)
+Features: Full Supabase functionality, Row Level Security, real-time subscriptions
+
+Method 2: Direct PostgreSQL
+
+Requirements: Host + Port 5432 + postgres user + POSTGRES_PASSWORD
+Security: Less secure - bypasses all Supabase security features
+Access: Anyone with IP + port + credentials
+Features: Basic CRUD operations only
+
+Recommendation: Use Supabase API method and close port 5432 in firewall for maximum security.
 
 ---
 
